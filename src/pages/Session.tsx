@@ -30,8 +30,10 @@ import { Modal } from "../components/Modal";
 import { Pill } from "../components/Pill";
 import { ResultLadder, RailLadder } from "../components/Ladder";
 import { EmptyState } from "../components/EmptyState";
+import { ItemContent } from "../components/ItemContent";
 import { TokenRow } from "../components/TokenRow";
 import { useToast } from "../components/Toast";
+import { AutoSessionPage } from "./AutoSession";
 
 export function SessionPage() {
   const db = useDB();
@@ -50,6 +52,10 @@ export function SessionPage() {
     // Only reconcile a stale draft once on entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (db.draft?.config.pacing === "auto") {
+    return <AutoSessionPage />;
+  }
 
   if (!draft || !learner) {
     return (
@@ -91,6 +97,9 @@ export function SessionPage() {
         previousDate={previous?.completedAt ?? null}
         saved={Boolean(savedId)}
         onSave={handleSave}
+        onReport={() => {
+          if (savedId) route.navigate(`/reports/${savedId}`);
+        }}
         onAnother={() => route.navigate("/assess")}
         onLearner={() => route.navigate(`/learners/${learner.id}`)}
       />
@@ -737,62 +746,6 @@ function ItemView({
   );
 }
 
-function ItemContent({ item, subject }: { item: Item; subject: DraftSession["subject"] }) {
-  if (item.kind === "dots") {
-    const count = item.dots ?? Number(item.content);
-    return (
-      <div className="dots-wrap" role="img" aria-label={`${count} dots to count`}>
-        {Array.from({ length: count }, (_, index) => (
-          <span key={index} className="dot" />
-        ))}
-      </div>
-    );
-  }
-
-  if (item.kind === "comprehension") {
-    return (
-      <div className="comprehension">
-        {item.passage ? <p className="comprehension-passage">{item.passage}</p> : null}
-        <p className="comprehension-question">{item.content}</p>
-      </div>
-    );
-  }
-
-  const content = item.content;
-  const words = content.trim().split(/\s+/).length;
-  const isKannada = subject === "kannada";
-
-  if (item.kind === "answer") {
-    const isExpression = /^[\d\s+\-−×÷=]+$/.test(content);
-    return (
-      <div className={`math-content ${isExpression ? "is-expression" : "is-question"}`}>
-        {content}
-      </div>
-    );
-  }
-
-  if (item.kind === "say") {
-    return (
-      <div
-        className={`reading-content is-sound ${isKannada ? "kannada-font" : ""}`}
-        lang={isKannada ? "kn" : undefined}
-      >
-        {content}
-      </div>
-    );
-  }
-
-  const sizeClass = words > 20 ? "is-story" : words > 8 ? "is-para" : "is-word";
-  return (
-    <div
-      className={`reading-content ${sizeClass} ${isKannada ? "kannada-font" : ""}`}
-      lang={isKannada ? "kn" : undefined}
-    >
-      {content}
-    </div>
-  );
-}
-
 function AnswerEntry({
   item,
   answer,
@@ -1039,6 +992,7 @@ function ResultView({
   previousDate,
   saved,
   onSave,
+  onReport,
   onAnother,
   onLearner,
 }: {
@@ -1050,6 +1004,7 @@ function ResultView({
   previousDate: string | null;
   saved: boolean;
   onSave: (assessment: Assessment) => void;
+  onReport: () => void;
   onAnother: () => void;
   onLearner: () => void;
 }) {
@@ -1104,6 +1059,11 @@ function ResultView({
       notes: notes.trim(),
       confidence,
       machineAssisted: draft.machineAssisted,
+      pacing: draft.config.pacing,
+      reviewStatus: draft.config.pacing === "educator" ? "confirmed" : "unreviewed",
+      reviewedAt: draft.config.pacing === "educator" ? new Date().toISOString() : undefined,
+      reviewedBy: draft.config.pacing === "educator" ? settings.educator : undefined,
+      teacherNote: notes.trim(),
     };
     onSave(assessment);
   };
@@ -1398,6 +1358,9 @@ function ResultView({
                   {formatDuration(Math.max(1, elapsed))}
                 </span>
                 <div className="saved-actions">
+                  <button type="button" className="btn btn-sm btn-primary" onClick={onReport}>
+                    Open report
+                  </button>
                   <button type="button" className="btn btn-sm" onClick={onLearner}>
                     View learner profile
                   </button>

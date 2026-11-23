@@ -1,7 +1,10 @@
 import { getRung, getRungs, SUBJECT_ORDER, topOrder } from "../data/curriculum";
 import type {
   Assessment,
+  AutoItemMetrics,
   Database,
+  Fluency,
+  Item,
   ItemResult,
   Learner,
   Outcome,
@@ -9,8 +12,9 @@ import type {
   SpeechTrial,
   SubjectId,
 } from "../types";
+import { assessmentConfidence, summariseResults } from "../lib/autoAssess";
 import { defaultSettings } from "../lib/defaults";
-import { rungScore, scoreTranscript } from "../lib/scoring";
+import { normaliseText, rungScore, scoreTranscript } from "../lib/scoring";
 
 interface HistoryPoint {
   order: number;
@@ -258,11 +262,111 @@ const profiles: Profile[] = [
   },
 ];
 
+function wordCount(value: string): number {
+  const normalised = normaliseText(value);
+  return normalised ? normalised.split(" ").length : 0;
+}
+
+function seedAutoMetrics(
+  subject: SubjectId,
+  item: Item,
+  outcome: Outcome,
+  variant: { hesitant: boolean; noSpeech: boolean },
+  index: number,
+): AutoItemMetrics {
+  const keypad = subject === "maths" && (item.kind === "answer" || item.kind === "dots");
+  const noSpeech = variant.noSpeech && outcome !== "correct" && index === 0;
+  const fluency: Fluency =
+    outcome === "correct"
+      ? variant.hesitant
+        ? "hesitant"
+        : "fluent"
+      : outcome === "partial"
+        ? "hesitant"
+        : "struggling";
+  const expectedText = item.spoken ?? item.content;
+  const expectedWords = Math.max(1, wordCount(expectedText));
+  const passage = item.kind === "read" && expectedWords > 8 && subject !== "maths";
+  const baseWpm = fluency === "fluent" ? 38 : fluency === "hesitant" ? 23 : 12;
+  const wordsPerMinute = passage && !noSpeech ? baseWpm : null;
+  const speakingSeconds = noSpeech
+    ? 0
+    : passage
+      ? Math.round((expectedWords / (wordsPerMinute ?? baseWpm)) * 60)
+      : Math.round((1.4 + expectedWords * 0.55 + (fluency === "hesitant" ? 1.2 : 0)) * 10) / 10;
+  const accuracy = noSpeech ? 0 : outcome === "correct" ? 0.95 : outcome === "partial" ? 0.6 : 0.28;
+  const machineConfidence = noSpeech ? 0.2 : fluency === "fluent" ? 0.88 : fluency === "hesitant" ? 0.62 : 0.38;
+
+  if (keypad) {
+    const answer = noSpeech ? "" : outcome === "correct" ? item.answer ?? "correct" : "0";
+    const answeredIn = Math.max(1, 6 + index * 5 + (fluency === "hesitant" ? 6 : 0));
+    return {
+      accuracy: noSpeech ? 0 : outcome === "correct" ? 1 : outcome === "partial" ? 0.5 : 0,
+      wordsPerMinute: null,
+      speakingSeconds: answeredIn,
+      pauseCount: 0,
+      longPauseCount: 0,
+      hesitationCount: 0,
+      matchedWords: outcome === "correct" ? 1 : 0,
+      totalWords: 1,
+      asrConfidence: null,
+      machineConfidence: noSpeech ? 0.2 : 0.97,
+      fluency: noSpeech ? "struggling" : fluency,
+      reasons: noSpeech
+        ? ["No answer was entered.", "The item was recorded as no response."]
+        : [
+            answer ? `The child entered ${answer}.` : "No answer was entered.",
+            outcome === "correct" ? "The answer matched the expected answer." : "The answer did not match the expected answer.",
+            `Answered in about ${answeredIn} seconds.`,
+          ],
+      noSpeech,
+      needsReview: noSpeech,
+      response: answer,
+    };
+  }
+
+  const asrConfidence = noSpeech ? null : fluency === "fluent" ? 0.9 : fluency === "hesitant" ? 0.64 : 0.4;
+  const matchedWords = Math.max(0, Math.round(expectedWords * accuracy));
+  const reasons = noSpeech
+    ? ["No speech was detected.", "The item was recorded as no response."]
+    : [
+        `${matchedWords} of ${expectedWords} expected words matched.`,
+        wordsPerMinute
+          ? `About ${wordsPerMinute} words per minute.`
+          : `Read in about ${speakingSeconds.toFixed(1)} seconds.`,
+        fluency === "fluent"
+          ? "The reading was steady and accurate."
+          : fluency === "hesitant"
+            ? "The reading was accurate but hesitant."
+            : "Accuracy and pace fell below the expected band.",
+        `${Math.round(machineConfidence * 100)}% machine confidence.`,
+      ];
+
+  return {
+    accuracy,
+    wordsPerMinute,
+    speakingSeconds,
+    pauseCount: noSpeech ? 0 : fluency === "fluent" ? 0 : fluency === "hesitant" ? 3 : 5,
+    longPauseCount: noSpeech ? 0 : fluency === "fluent" ? 0 : fluency === "hesitant" ? 1 : 2,
+    hesitationCount: noSpeech ? 0 : fluency === "fluent" ? 0 : fluency === "hesitant" ? 1 : 2,
+    matchedWords,
+    totalWords: expectedWords,
+    asrConfidence,
+    machineConfidence,
+    fluency,
+    reasons,
+    noSpeech,
+    needsReview: noSpeech || (machineConfidence < 0.5 && accuracy >= 0.35),
+    response: noSpeech ? "" : expectedText,
+  };
+}
+
 function buildRungResult(
   subject: SubjectId,
   order: number,
   passed: boolean,
   partialCredit: boolean,
+  variant: { hesitant: boolean; noSpeech: boolean },
 ): RungResult {
   const rung = getRung(subject, order);
   if (!rung) throw new Error(`Missing rung ${subject} ${order}`);
@@ -270,23 +374,22 @@ function buildRungResult(
   const outcomes: Outcome[] = passed
     ? items.map((_, index) => (index === items.length - 1 && items.length > 2 ? "partial" : "correct"))
     : items.map((_, index) => (index === 1 ? "partial" : "incorrect"));
-  const itemResults: ItemResult[] = items.map((item, index) => ({
-    itemId: item.id,
-    expected: item.spoken ?? item.content,
-    outcome: outcomes[index],
-    fluency:
-      rung.subject === "maths"
-        ? null
-        : passed
-          ? index === items.length - 1 && items.length > 2
-            ? "hesitant"
-            : "fluent"
-          : "struggling",
-    support: rung.subject === "maths" ? (passed ? "independent" : "prompted") : null,
-    method: "manual",
-    suggestion: null,
-    match: null,
-  }));
+  const itemResults: ItemResult[] = items.map((item, index) => {
+    const metrics = seedAutoMetrics(subject, item, outcomes[index], variant, index);
+    const keypad = subject === "maths" && (item.kind === "answer" || item.kind === "dots");
+    return {
+      itemId: item.id,
+      expected: item.spoken ?? item.content,
+      heard: metrics.response || undefined,
+      outcome: metrics.noSpeech ? "incorrect" : outcomes[index],
+      fluency: metrics.fluency,
+      support: null,
+      method: keypad ? "keypad" : "speech",
+      suggestion: metrics.noSpeech ? "incorrect" : outcomes[index],
+      match: metrics.accuracy,
+      auto: metrics,
+    };
+  });
   return {
     rungId: rung.id,
     order,
@@ -304,19 +407,27 @@ function buildAssessment(
 ): Assessment {
   const config = {
     mode: "full" as const,
+    pacing: "auto" as const,
     startOrder: 1,
     itemsPerRung: 3,
     passMark: 2,
     maxRungs: 6,
     partialCredit: true,
   };
+  const variant = {
+    hesitant: learner.code === "SPK-0411" || learner.code === "SPK-0304",
+    noSpeech: learner.code === "SPK-0304",
+  };
   const results: RungResult[] = [];
   for (let order = 1; order <= point.order; order += 1) {
-    results.push(buildRungResult(subject, order, true, true));
+    results.push(buildRungResult(subject, order, true, true, variant));
   }
   if (point.order < topOrder(subject)) {
-    results.push(buildRungResult(subject, point.order + 1, false, true));
+    results.push(buildRungResult(subject, point.order + 1, false, true, variant));
   }
+  const summary = summariseResults(results, subject, point.order);
+  const confidence = assessmentConfidence(summary);
+  const needsReview = summary.reviewItems > 0 || confidence === "low";
   const completed = AT(point.daysAgo, 10, 15 + (point.daysAgo % 20), now);
   const started = new Date(completed.getTime() - point.durationSec * 1000);
   return {
@@ -333,8 +444,14 @@ function buildAssessment(
     finalOrder: point.order,
     overridden: false,
     notes: point.notes ?? "",
-    confidence: point.confidence ?? "high",
-    machineAssisted: false,
+    confidence,
+    machineAssisted: true,
+    pacing: "auto",
+    autoSummary: summary,
+    reviewStatus: needsReview ? "unreviewed" : "confirmed",
+    reviewedBy: needsReview ? undefined : point.educator,
+    reviewedAt: needsReview ? undefined : new Date(completed.getTime() + 3_600_000).toISOString(),
+    teacherNote: "",
   };
 }
 
@@ -449,7 +566,7 @@ export function makeSeedDatabase(now = new Date()): Database {
   });
 
   return {
-    version: 1,
+    version: 2,
     createdAt: now.toISOString(),
     learners,
     assessments,

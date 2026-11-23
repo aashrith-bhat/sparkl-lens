@@ -251,7 +251,15 @@ export function LearnerDetailPage() {
               <span>
                 Last assessed {relativeDate(latest.completedAt).toLowerCase()} by {latest.educator}
               </span>
-              <span>{latest.overridden ? "Educator override" : "Educator confirmed"}</span>
+              <span>
+                {latest.reviewStatus === "adjusted"
+                  ? "Teacher adjusted"
+                  : latest.pacing === "auto"
+                    ? latest.reviewStatus === "confirmed"
+                      ? "Automatic · teacher checked"
+                      : "Automatic · not yet checked"
+                    : "Educator confirmed"}
+              </span>
             </div>
           ) : null}
         </section>
@@ -312,6 +320,11 @@ export function LearnerDetailPage() {
                 A first assessment will show the level, rungs cleared, duration and the educator's note.
               </p>
             )}
+            {latest ? (
+              <a className="text-link mt-8" href={`#/reports/${latest.id}`}>
+                Open the full report <Icon name="arrow-right" size={13} />
+              </a>
+            ) : null}
           </section>
         </div>
       </div>
@@ -350,7 +363,7 @@ export function LearnerDetailPage() {
         </div>
         {allAssessments.length ? (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table table--rowlink">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -366,7 +379,14 @@ export function LearnerDetailPage() {
                   const rung = assessment.finalOrder > 0 ? getRung(assessment.subject, assessment.finalOrder) : null;
                   const cleared = assessment.results.filter((result) => result.passed).length;
                   return (
-                    <tr key={assessment.id}>
+                    <tr
+                      key={assessment.id}
+                      onClick={() => route.navigate(`/reports/${assessment.id}`)}
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") route.navigate(`/reports/${assessment.id}`);
+                      }}
+                    >
                       <td className="nowrap">
                         <span className="cell-main">{formatDate(assessment.completedAt, false)}</span>
                         <span className="cell-sub">{new Date(assessment.completedAt).getFullYear()}</span>

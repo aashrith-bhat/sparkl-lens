@@ -5,6 +5,8 @@ import { EmptyState } from "./components/EmptyState";
 import { OverviewPage } from "./pages/Overview";
 import { AssessPage } from "./pages/Assess";
 import { SessionPage } from "./pages/Session";
+import { ReportsPage } from "./pages/Reports";
+import { ReportDetailPage } from "./pages/ReportDetail";
 import { LearnersPage } from "./pages/Learners";
 import { LearnerDetailPage } from "./pages/LearnerDetail";
 import { SpeechLabPage } from "./pages/SpeechLab";
@@ -25,6 +27,13 @@ export default function App() {
       break;
     case "session":
       page = <SessionPage />;
+      break;
+    case "reports":
+      page = route.segments[1] ? (
+        <ReportDetailPage key={route.segments[1]} />
+      ) : (
+        <ReportsPage />
+      );
       break;
     case "learners":
       page = route.segments[1] ? (

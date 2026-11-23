@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getRung, getRungs, getSubject, shortRungName, SUBJECT_ORDER } from "../data/curriculum";
-import type { SessionConfig, SessionMode, SubjectId } from "../types";
+import type { Pacing, SessionConfig, SessionMode, SubjectId } from "../types";
 import { useDB, addLearner, clearDraft, saveDraft } from "../lib/store";
 import { useHashRoute } from "../lib/router";
 import { estimateMinutes, configFor, createDraft, enabledRungs } from "../lib/session";
 import { latestAssessment, subjectSnapshots } from "../lib/selectors";
 import { clamp, relativeDate } from "../lib/format";
+import { speechRecognitionSupported, useSpeechRecognition } from "../lib/useSpeech";
 import { PageHeader } from "../components/PageHeader";
 import { Avatar } from "../components/Avatar";
 import { Icon } from "../components/Icon";
@@ -35,6 +36,8 @@ export function AssessPage() {
   const [learnerId, setLearnerId] = useState(initialLearner);
   const [subject, setSubject] = useState<SubjectId>(initialSubject);
   const [mode, setMode] = useState<SessionMode>("quick");
+  const [pacing, setPacing] = useState<Pacing>("auto");
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   const [search, setSearch] = useState("");
   const [custom, setCustom] = useState({
     startOrder: 1,
@@ -44,6 +47,20 @@ export function AssessPage() {
   });
   const [newLearnerOpen, setNewLearnerOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+
+  const browserSpeech = speechRecognitionSupported();
+  const secureContext = typeof window === "undefined" || window.isSecureContext;
+  const autoReady = browserSpeech && online && secureContext;
 
   const learner = learners.find((item) => item.id === learnerId) ?? learners[0];
   const latest = learner ? latestAssessment(assessments, learner.id, subject) : null;
@@ -76,14 +93,18 @@ export function AssessPage() {
           maxRungs: custom.maxRungs,
         }
       : undefined,
+    pacing,
   );
   const minutes = estimateMinutes(config);
-  const fullConfig = configFor("full", subject, currentOrder, settings);
+  const fullConfig = configFor("full", subject, currentOrder, settings, undefined, pacing);
   const fullMinutes = estimateMinutes(fullConfig);
+  const quickConfig = configFor("quick", subject, currentOrder, settings, undefined, pacing);
+  const quickMinutes = estimateMinutes(quickConfig);
   const quickStart = currentOrder > 1 ? currentOrder - 1 : 1;
   const startRung = getRung(subject, config.startOrder);
   const consentMissing = Boolean(learner && !learner.consentOnFile);
-  const canStart = Boolean(learner) && !consentMissing;
+  const autoBlocked = pacing === "auto" && !autoReady;
+  const canStart = Boolean(learner) && !consentMissing && !autoBlocked;
 
   const pickLearner = (id: string) => {
     setLearnerId(id);
@@ -149,7 +170,7 @@ export function AssessPage() {
     <>
       <PageHeader
         title="Assess"
-        subline="Pick a learner, a subject and how far to test. The educator marks every response and confirms the final level."
+        subline="Pick a learner, subject and test length. Automatic mode listens, scores and builds the detailed report; the volunteer only starts it and reads the evidence."
       />
 
       {draft && draft !== null ? (
@@ -170,6 +191,7 @@ export function AssessPage() {
             {learner ? learner.code : "Choose a learner"} · {getSubject(subject).name}
           </span>
           <span className="begin-meta">
+            {pacing === "auto" ? "Automatic" : "Educator-assisted"} ·{" "}
             {startRung ? startRung.name : "—"} start · {config.itemsPerRung} items per rung ·{" "}
             {config.passMark} to clear · about {minutes} min
           </span>
@@ -180,7 +202,13 @@ export function AssessPage() {
           onClick={begin}
           disabled={!canStart}
           aria-label="Begin assessment"
-          title={!canStart ? "Consent must be on file before an assessment can start." : undefined}
+          title={
+            !canStart
+              ? consentMissing
+                ? "Consent must be on file before an assessment can start."
+                : "Automatic mode needs browser speech, HTTPS/localhost and a connection. Switch to educator-assisted or use Chrome."
+              : undefined
+          }
         >
           <span className="begin-label-full" aria-hidden="true">Begin assessment</span>
           <span className="begin-label-short" aria-hidden="true">Begin</span>
@@ -189,7 +217,9 @@ export function AssessPage() {
       </div>
       {!canStart && learner ? (
         <p className="begin-reason">
-          Consent is not on file for {learner.code}. The begin button stays disabled.
+          {consentMissing
+            ? `Consent is not on file for ${learner.code}. The begin button stays disabled.`
+            : "Automatic mode is blocked: this browser needs speech recognition, a secure context and a connection. Use Chrome on localhost, or choose educator-assisted mode."}
         </p>
       ) : null}
 
@@ -313,6 +343,98 @@ export function AssessPage() {
             </div>
           </section>
 
+          <section className="panel assess-step" aria-labelledby="step-pacing">
+            <div className="assess-step-head">
+              <div>
+                <h2 id="step-pacing">How should it run?</h2>
+                <p className="section-sub">
+                  Automatic is built for a volunteer starting one child and reading the report
+                  afterwards.
+                </p>
+              </div>
+            </div>
+
+            <div className="mode-list" role="radiogroup" aria-label="Assessment pacing">
+              <ModeRow
+                selected={pacing === "auto"}
+                onSelect={() => setPacing("auto")}
+                title="Automatic (child-led)"
+                detail="The child taps Start, reads aloud, and the app scores accuracy, pace and pauses, then moves on. No per-item marking."
+                meta="Recommended"
+              />
+              <ModeRow
+                selected={pacing === "educator"}
+                onSelect={() => setPacing("educator")}
+                title="Educator-assisted"
+                detail="The educator listens and marks each item. Use this for calibration or when speech is not available."
+                meta="Offline-friendly"
+              />
+            </div>
+
+            {pacing === "auto" ? (
+              <div className="auto-preflight">
+                <div className="auto-preflight-head">
+                  <span className="auto-preflight-title">Before you start</span>
+                  <span className={`auto-preflight-badge ${autoReady ? "is-ready" : "is-blocked"}`}>
+                    {autoReady ? "Ready for automatic" : "Needs attention"}
+                  </span>
+                </div>
+                <div className="auto-preflight-grid">
+                  <div className="device-row">
+                    <span
+                      className={`status-dot ${
+                        browserSpeech ? "status-dot--positive" : "status-dot--negative"
+                      }`}
+                    />
+                    <span className="device-label">Browser speech</span>
+                    <span className={`device-value ${browserSpeech ? "is-positive" : "is-negative"}`}>
+                      {browserSpeech ? "Available" : "Not available"}
+                    </span>
+                  </div>
+                  <div className="device-row">
+                    <span
+                      className={`status-dot ${
+                        secureContext ? "status-dot--positive" : "status-dot--negative"
+                      }`}
+                    />
+                    <span className="device-label">Secure context</span>
+                    <span className={`device-value ${secureContext ? "is-positive" : "is-negative"}`}>
+                      {secureContext ? "Yes" : "Needs HTTPS"}
+                    </span>
+                  </div>
+                  <div className="device-row">
+                    <span
+                      className={`status-dot ${online ? "status-dot--positive" : "status-dot--warning"}`}
+                    />
+                    <span className="device-label">Connection</span>
+                    <span className={`device-value ${online ? "is-positive" : "is-warning"}`}>
+                      {online ? "Online" : "Offline"}
+                    </span>
+                  </div>
+                </div>
+                <MicCheck subject={subject} />
+                {!autoReady ? (
+                  <p className="auto-preflight-warning">
+                    Automatic scoring needs browser speech, HTTPS or localhost, and a connection in
+                    Chrome. Switch to educator-assisted mode, or open the app in Chrome on localhost.
+                  </p>
+                ) : null}
+                <p className="auto-preflight-note">
+                  The app uses the browser's speech service; the audio is not stored. Low-confidence
+                  items are flagged for a quick check in the report.
+                </p>
+              </div>
+            ) : (
+              <div className="notice mt-16">
+                <Icon name="users" size={15} />
+                <span>
+                  Educator-assisted mode works offline. The educator marks each item and confirms the
+                  level; the detailed report still captures the evidence.
+                </span>
+              </div>
+            )}
+          </section>
+
           <section className="panel assess-step" aria-labelledby="step-mode">
             <div className="assess-step-head">
               <div>
@@ -333,7 +455,7 @@ export function AssessPage() {
                 onSelect={() => setMode("quick")}
                 title="Quick check"
                 detail="Two items per rung, one to clear, up to four attempts. A triage estimate."
-                meta="About 4 min"
+                meta={`About ${quickMinutes} min`}
               />
               <ModeRow
                 selected={mode === "full"}
@@ -446,33 +568,70 @@ export function AssessPage() {
 
         <aside className="col-4 assess-aside">
           <section className="panel aside-panel">
-            <h2 className="aside-title">How a level is decided</h2>
+            <h2 className="aside-title">
+              {pacing === "auto" ? "How automatic scoring works" : "How a level is decided"}
+            </h2>
             <ol className="how-list">
-              <li>
-                <span className="how-marker" aria-hidden="true" />
-                <span>
-                  The ladder starts at the chosen rung. Clear it and the next rung opens; stop and the
-                  educator confirms the highest comfortable rung.
-                </span>
-              </li>
-              <li>
-                <span className="how-marker" aria-hidden="true" />
-                <span>
-                  If the first rung is not cleared, the ladder drops one rung to check the level below.
-                </span>
-              </li>
-              <li>
-                <span className="how-marker" aria-hidden="true" />
-                <span>
-                  The machine can suggest a reading match, but it never saves a mark. The educator does.
-                </span>
-              </li>
-              <li>
-                <span className="how-marker" aria-hidden="true" />
-                <span>
-                  On the result screen, the educator can override the suggested level before saving.
-                </span>
-              </li>
+              {pacing === "auto" ? (
+                <>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      The child reads each item aloud. The app scores accuracy, pace, pauses and
+                      recognition confidence; the volunteer does not mark items.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      The ladder advances automatically. If a rung does not clear, it checks the level
+                      below before recording a result.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      At the end it saves a detailed report with the level, fluency band and item
+                      evidence. Low-confidence items are flagged for a quick check.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      A teacher check is optional afterwards; it is not needed to finish the session.
+                    </span>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      The ladder starts at the chosen rung. Clear it and the next opens; the educator
+                      confirms the highest comfortable rung.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      If the first rung is not cleared, the ladder drops one rung to check the level
+                      below.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      The machine can suggest a reading match, but the educator marks every item.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="how-marker" aria-hidden="true" />
+                    <span>
+                      On the result screen, the educator can override the suggested level before saving.
+                    </span>
+                  </li>
+                </>
+              )}
             </ol>
             <div className="aside-rule">
               <span className="aside-rule-label">Current draft rule</span>
@@ -495,6 +654,15 @@ export function AssessPage() {
                 has not yet supplied its official rubric.
               </p>
             </div>
+            {pacing === "auto" ? (
+              <div className="field-note">
+                <span className="field-note-kicker">Automatic is experimental</span>
+                <p>
+                  Task 4 recommends an educator listens and confirms. This build adds child-led scoring
+                  to explore scale; treat low-confidence reports as provisional and spot-check them.
+                </p>
+              </div>
+            ) : null}
             <div className="field-note">
               <span className="field-note-kicker">Kannada instructions</span>
               <p className="kannada-note kannada" lang="kn">
@@ -503,10 +671,14 @@ export function AssessPage() {
               <p>Instructions show in Kannada as well as English. Change this in Settings.</p>
             </div>
             <div className="field-note">
-              <span className="field-note-kicker">Offline and private</span>
+              <span className="field-note-kicker">
+                {pacing === "auto" ? "Quiet corner, private data" : "Offline and private"}
+              </span>
               <p>
-                Records stay in this browser. Learner codes only; no names. Speech capture is optional
-                and needs a network-backed browser service in Chrome.
+                Records stay in this browser; learner codes only, no names.{" "}
+                {pacing === "auto"
+                  ? "Automatic speech uses the browser's service and may need a connection. Use a quiet corner and a charged device."
+                  : "This mode works offline; speech capture is optional."}
               </p>
             </div>
             <a className="text-link mt-8" href="#/evidence">
@@ -546,6 +718,67 @@ export function AssessPage() {
         </p>
       </Modal>
     </>
+  );
+}
+
+function MicCheck({ subject }: { subject: SubjectId }) {
+  const language = subject === "kannada" ? "kn-IN" : "en-IN";
+  const speech = useSpeechRecognition(language);
+  const [status, setStatus] = useState<"idle" | "listening" | "done">("idle");
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => clearTimer();
+  }, []);
+
+  useEffect(() => {
+    if (speech.error && status === "listening") {
+      clearTimer();
+      setStatus("done");
+    }
+  }, [speech.error, status]);
+
+  const test = () => {
+    if (!speech.supported || status === "listening") return;
+    clearTimer();
+    speech.start();
+    setStatus("listening");
+    timerRef.current = window.setTimeout(() => {
+      speech.stop();
+      setStatus("done");
+    }, 5000);
+  };
+
+  return (
+    <div className="mic-check">
+      <div className="mic-check-head">
+        <span className="mic-check-title">Microphone check</span>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={test}
+          disabled={!speech.supported || status === "listening"}
+        >
+          {status === "listening" ? "Listening…" : "Test microphone"}
+        </button>
+      </div>
+      <p className="mic-check-copy">
+        {speech.error
+          ? speech.error
+          : status === "done"
+            ? speech.capturedText.trim()
+              ? `Heard: “${speech.capturedText.trim()}”`
+              : "No speech heard. Check the microphone and the quiet space."
+            : status === "listening"
+              ? "Speak a short sentence. This test is not saved."
+              : "Speak for five seconds so the volunteer knows the device can hear the child."}
+      </p>
+    </div>
   );
 }
 

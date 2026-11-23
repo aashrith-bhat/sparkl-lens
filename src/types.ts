@@ -4,6 +4,8 @@ export type Outcome = "correct" | "partial" | "incorrect";
 export type Fluency = "fluent" | "hesitant" | "struggling";
 export type Support = "independent" | "prompted" | "with-help";
 export type Confidence = "high" | "medium" | "low";
+export type Pacing = "auto" | "educator";
+export type ReviewStatus = "unreviewed" | "confirmed" | "adjusted";
 
 export type ItemKind = "read" | "say" | "answer" | "dots" | "comprehension";
 export type CaptureMethod = "speech" | "manual" | "keypad" | "text";
@@ -47,6 +49,24 @@ export interface Subject {
   topNote: string;
 }
 
+export interface AutoItemMetrics {
+  accuracy: number;
+  wordsPerMinute: number | null;
+  speakingSeconds: number;
+  pauseCount: number;
+  longPauseCount: number;
+  hesitationCount: number;
+  matchedWords: number;
+  totalWords: number;
+  asrConfidence: number | null;
+  machineConfidence: number;
+  fluency: Fluency;
+  reasons: string[];
+  noSpeech: boolean;
+  needsReview: boolean;
+  response: string;
+}
+
 export interface ItemResult {
   itemId: string;
   expected: string;
@@ -57,6 +77,7 @@ export interface ItemResult {
   method: CaptureMethod;
   suggestion?: Outcome | null;
   match?: number | null;
+  auto?: AutoItemMetrics;
 }
 
 export interface RungResult {
@@ -71,11 +92,23 @@ export type SessionMode = "quick" | "full" | "custom";
 
 export interface SessionConfig {
   mode: SessionMode;
+  pacing: Pacing;
   startOrder: number;
   itemsPerRung: number;
   passMark: number;
   maxRungs: number;
   partialCredit: boolean;
+}
+
+export interface AutoSummary {
+  accuracy: number;
+  wordsPerMinute: number | null;
+  fluency: Fluency;
+  machineConfidence: number;
+  noSpeechItems: number;
+  reviewItems: number;
+  reasons: string[];
+  summary: string;
 }
 
 export interface Assessment {
@@ -94,6 +127,12 @@ export interface Assessment {
   notes: string;
   confidence: Confidence;
   machineAssisted: boolean;
+  pacing: Pacing;
+  autoSummary?: AutoSummary;
+  reviewStatus?: ReviewStatus;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  teacherNote?: string;
 }
 
 export interface Learner {

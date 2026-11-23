@@ -4,6 +4,7 @@ export type IconName =
   | "overview"
   | "ladder"
   | "learners"
+  | "report"
   | "wave"
   | "book"
   | "settings"
@@ -52,6 +53,14 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M3.5 20c0-3.2 2.5-5.6 5.5-5.6s5.5 2.4 5.5 5.6" />
       <path d="M16 5.4a3 3 0 0 1 0 5.8" />
       <path d="M17.2 14.9c2 .5 3.3 2.3 3.3 4.6" />
+    </>
+  ),
+  report: (
+    <>
+      <path d="M6 3h8l4 4v14H6V3Z" />
+      <path d="M14 3v4h4" />
+      <path d="M9 11h6" />
+      <path d="M9 15h6" />
     </>
   ),
   wave: (

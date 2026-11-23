@@ -3,6 +3,7 @@ import type {
   DraftSession,
   Item,
   ItemResult,
+  Pacing,
   Rung,
   RungResult,
   SessionConfig,
@@ -81,11 +82,13 @@ export function configFor(
   currentOrder: number,
   settings: Settings,
   custom?: { startOrder?: number; itemsPerRung?: number; passMark?: number; maxRungs?: number },
+  pacing: Pacing = "auto",
 ): SessionConfig {
   const top = topOrder(subject);
   if (mode === "quick") {
     return {
       mode,
+      pacing,
       startOrder: clamp(currentOrder > 0 ? currentOrder - 1 : 1, 1, top),
       itemsPerRung: clamp(2, 1, 5),
       passMark: 1,
@@ -96,6 +99,7 @@ export function configFor(
   if (mode === "custom") {
     return {
       mode,
+      pacing,
       startOrder: clamp(custom?.startOrder ?? 1, 1, top),
       itemsPerRung: clamp(custom?.itemsPerRung ?? settings.itemsPerRung, 1, 5),
       passMark: clamp(custom?.passMark ?? settings.passMark, 1, 5),
@@ -105,6 +109,7 @@ export function configFor(
   }
   return {
     mode: "full",
+    pacing,
     startOrder: 1,
     itemsPerRung: clamp(settings.itemsPerRung, 1, 5),
     passMark: clamp(settings.passMark, 1, 5),
@@ -216,7 +221,7 @@ export function commitItemResult(
     passed,
   };
   const rungResults = [...timed.rungResults, rungResult];
-  const next = nextState({ ...timed, rungResults }, rungResult, settings);
+  const next = nextState(timed, rungResult, settings);
   return {
     ...timed,
     currentResults,
@@ -276,7 +281,7 @@ export function firstFailureAbove(draft: DraftSession, order: number): RungResul
 }
 
 export function estimateMinutes(config: SessionConfig): number {
-  const perItem = 22;
+  const perItem = config.pacing === "auto" ? 32 : 22;
   const overhead = 45;
   return Math.max(2, Math.round((config.itemsPerRung * config.maxRungs * perItem + overhead) / 60));
 }

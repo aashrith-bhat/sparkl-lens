@@ -14,7 +14,7 @@ import type {
 import { defaultSettings } from "./defaults";
 
 const KEY = "sparkl-lens-db-v1";
-const VERSION = 1;
+const VERSION = 2;
 
 const listeners = new Set<() => void>();
 
@@ -147,8 +147,17 @@ export function updateLearner(learnerId: string, patch: Partial<Learner>): void 
 
 export function addAssessment(assessment: Assessment): void {
   update((draft) => {
-    draft.assessments.push(assessment);
+    if (!draft.assessments.some((item) => item.id === assessment.id)) {
+      draft.assessments.push(assessment);
+    }
     draft.draft = null;
+  });
+}
+
+export function updateAssessment(assessmentId: string, patch: Partial<Assessment>): void {
+  update((draft) => {
+    const assessment = draft.assessments.find((item) => item.id === assessmentId);
+    if (assessment) Object.assign(assessment, patch);
   });
 }
 

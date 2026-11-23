@@ -286,8 +286,8 @@ export function OverviewPage() {
               <h2 id="recent-title">Recent assessments</h2>
               <p className="section-sub">The latest records saved on this device.</p>
             </div>
-            <a className="section-action" href="#/learners">
-              All records
+            <a className="section-action" href="#/reports">
+              All reports
             </a>
           </div>
           {recent.length ? (
@@ -309,12 +309,10 @@ export function OverviewPage() {
                     return (
                       <tr
                         key={assessment.id}
-                        onClick={() => {
-                          if (learner) route.navigate(`/learners/${learner.id}`);
-                        }}
+                        onClick={() => route.navigate(`/reports/${assessment.id}`)}
                         tabIndex={0}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" && learner) route.navigate(`/learners/${learner.id}`);
+                          if (event.key === "Enter") route.navigate(`/reports/${assessment.id}`);
                         }}
                       >
                         <td>

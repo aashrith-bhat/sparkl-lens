@@ -15,6 +15,7 @@ interface NavItem {
 const NAV_MAIN: NavItem[] = [
   { label: "Overview", path: "/overview", icon: "overview", match: ["/overview"] },
   { label: "Assess", path: "/assess", icon: "ladder", match: ["/assess", "/session"] },
+  { label: "Reports", path: "/reports", icon: "report", match: ["/reports"] },
   { label: "Learners", path: "/learners", icon: "learners", match: ["/learners"] },
 ];
 
@@ -30,6 +31,7 @@ const PAGE_TITLES: Record<string, string> = {
   assess: "Assess",
   session: "Assessment in progress",
   learners: "Learners",
+  reports: "Reports",
   learner: "Learner profile",
   speech: "Speech lab",
   evidence: "Evidence",
@@ -56,6 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const centres = Array.from(new Set(db.learners.map((learner) => learner.centre)));
   const draft = db.draft;
   const draftLearner = draft ? db.learners.find((learner) => learner.id === draft.learnerId) : null;
+  const autoFocus = route.path === "/session" && draft?.config.pacing === "auto";
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -115,7 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
 
   return (
-    <div className="app-frame">
+    <div className={`app-frame ${autoFocus ? "is-auto-focus" : ""}`}>
       <aside className="sidebar">
         <a href="#/overview" className="brand" aria-label="SparkL Lens, overview">
           <span className="brand-mark" aria-hidden="true">

@@ -66,8 +66,21 @@ export function useSpeechRecognition(language: "en-IN" | "kn-IN") {
   const [listening, setListening] = useState(false);
   const [finalText, setFinalText] = useState("");
   const [interim, setInterim] = useState("");
+  const [capturedText, setCapturedText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [firstResultAt, setFirstResultAt] = useState<number | null>(null);
+  const [lastResultAt, setLastResultAt] = useState<number | null>(null);
+  const [pauseCount, setPauseCount] = useState(0);
+  const [longPauseCount, setLongPauseCount] = useState(0);
+  const [asrConfidence, setAsrConfidence] = useState<number | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const finalRef = useRef("");
+  const firstResultRef = useRef<number | null>(null);
+  const lastResultRef = useRef<number | null>(null);
+  const pauseRef = useRef(0);
+  const longPauseRef = useRef(0);
+  const confidenceSamplesRef = useRef<number[]>([]);
 
   const stop = useCallback(() => {
     recognitionRef.current?.stop();
@@ -75,39 +88,81 @@ export function useSpeechRecognition(language: "en-IN" | "kn-IN") {
   }, []);
 
   const reset = useCallback(() => {
+    finalRef.current = "";
+    firstResultRef.current = null;
+    lastResultRef.current = null;
+    pauseRef.current = 0;
+    longPauseRef.current = 0;
+    confidenceSamplesRef.current = [];
     setFinalText("");
     setInterim("");
+    setCapturedText("");
     setError(null);
+    setStartedAt(null);
+    setFirstResultAt(null);
+    setLastResultAt(null);
+    setPauseCount(0);
+    setLongPauseCount(0);
+    setAsrConfidence(null);
   }, []);
 
   const start = useCallback(() => {
     const Constructor = getConstructor();
     if (!Constructor) {
-      setError("This browser does not expose speech recognition. Use manual marking.");
+      setError("This browser does not expose speech recognition. Use educator-assisted mode.");
       return;
     }
     recognitionRef.current?.abort();
-    setFinalText("");
-    setInterim("");
-    setError(null);
+    reset();
+    const started = Date.now();
+    setStartedAt(started);
     const recognition = new Constructor();
     recognition.lang = language;
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.onresult = (event) => {
+      const now = Date.now();
+      if (!firstResultRef.current) {
+        firstResultRef.current = now;
+        setFirstResultAt(now);
+      }
+      if (lastResultRef.current && now - lastResultRef.current > 1200) {
+        pauseRef.current += 1;
+        setPauseCount(pauseRef.current);
+        if (now - lastResultRef.current > 2600) {
+          longPauseRef.current += 1;
+          setLongPauseCount(longPauseRef.current);
+        }
+      }
+      lastResultRef.current = now;
+      setLastResultAt(now);
+
       let final = "";
       let pending = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         const transcript = result[0]?.transcript ?? "";
-        if (result.isFinal) final += ` ${transcript}`;
-        else pending += ` ${transcript}`;
+        if (result.isFinal) {
+          final += ` ${transcript}`;
+          const confidence = result[0]?.confidence;
+          if (typeof confidence === "number" && confidence > 0) {
+            confidenceSamplesRef.current.push(confidence);
+            const average =
+              confidenceSamplesRef.current.reduce((sum, value) => sum + value, 0) /
+              confidenceSamplesRef.current.length;
+            setAsrConfidence(average);
+          }
+        } else {
+          pending += ` ${transcript}`;
+        }
       }
       if (final.trim()) {
-        setFinalText((current) => `${current} ${final}`.replace(/\s+/g, " ").trim());
+        finalRef.current = `${finalRef.current} ${final}`.replace(/\s+/g, " ").trim();
+        setFinalText(finalRef.current);
       }
       setInterim(pending.trim());
+      setCapturedText(`${finalRef.current} ${pending}`.replace(/\s+/g, " ").trim());
     };
     recognition.onerror = (event) => {
       setError(errorMessage(event.error));
@@ -122,10 +177,10 @@ export function useSpeechRecognition(language: "en-IN" | "kn-IN") {
       recognition.start();
       setListening(true);
     } catch {
-      setError("Speech capture could not start. Manual marking still works.");
+      setError("Speech capture could not start. Use educator-assisted mode.");
       setListening(false);
     }
-  }, [language]);
+  }, [language, reset]);
 
   useEffect(() => {
     return () => {
@@ -144,7 +199,23 @@ export function useSpeechRecognition(language: "en-IN" | "kn-IN") {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
-  return { supported, listening, finalText, interim, error, start, stop, reset };
+  return {
+    supported,
+    listening,
+    finalText,
+    interim,
+    capturedText,
+    error,
+    startedAt,
+    firstResultAt,
+    lastResultAt,
+    pauseCount,
+    longPauseCount,
+    asrConfidence,
+    start,
+    stop,
+    reset,
+  };
 }
 
 export function useMicLevel(active: boolean): number[] {

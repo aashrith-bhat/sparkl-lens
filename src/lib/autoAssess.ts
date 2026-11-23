@@ -91,7 +91,10 @@ export function analyseReading(
   transcript: string,
   timing: CaptureTiming,
 ): AutoAnalysis {
-  const expected = item.spoken ?? item.content;
+  const expected =
+    item.kind === "comprehension"
+      ? item.answer ?? item.content
+      : item.spoken ?? item.content;
   const score = scoreTranscript(expected, transcript);
   const spokenWords = tokenCount(transcript);
   const expectedWords = tokenCount(expected);

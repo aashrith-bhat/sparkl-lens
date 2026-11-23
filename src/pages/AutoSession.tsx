@@ -409,12 +409,16 @@ function AutoItem({
     ? item.kind === "dots"
       ? "Count the dots and type how many on the number pad."
       : "Work out the answer and type it on the number pad."
-    : rung.instruction;
+    : item.kind === "comprehension"
+      ? "Read the story, then answer the question out loud."
+      : rung.instruction;
   const kannadaInstruction = isMathsKeypad
     ? item.kind === "dots"
       ? "ಚುಕ್ಕಿಗಳನ್ನು ಎಣಿಸಿ ಸಂಖ್ಯೆಯನ್ನು ಬರೆಯಿರಿ."
       : "ಉತ್ತರವನ್ನು ಲೆಕ್ಕ ಮಾಡಿ ಸಂಖ್ಯಾ ಪಟ್ಟಿಯಲ್ಲಿ ಬರೆಯಿರಿ."
-    : rung.kannadaInstruction;
+    : item.kind === "comprehension"
+      ? "ಕಥೆಯನ್ನು ಓದಿ, ನಂತರ ಪ್ರಶ್ನೆಗೆ ಉತ್ತರಿಸಿ."
+      : rung.kannadaInstruction;
 
   const hearInstruction = () => {
     const text = settings.showKannadaInstructions ? kannadaInstruction : instruction;
@@ -636,7 +640,10 @@ function AutoReadingItem({
     commitTimerRef.current = window.setTimeout(() => {
       const result: ItemResult = {
         itemId: item.id,
-        expected: item.spoken ?? item.content,
+        expected:
+          item.kind === "comprehension"
+            ? item.answer ?? item.content
+            : item.spoken ?? item.content,
         heard: transcript || undefined,
         outcome: auto.outcome,
         fluency: auto.metrics.fluency,
@@ -668,7 +675,10 @@ function AutoReadingItem({
     commitTimerRef.current = window.setTimeout(() => {
       onCommit({
         itemId: item.id,
-        expected: item.spoken ?? item.content,
+        expected:
+          item.kind === "comprehension"
+            ? item.answer ?? item.content
+            : item.spoken ?? item.content,
         outcome: auto.outcome,
         fluency: auto.metrics.fluency,
         support: null,

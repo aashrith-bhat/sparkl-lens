@@ -416,8 +416,11 @@ export function ReportDetailPage() {
                             </Pill>
                             {itemResult.auto?.needsReview ? <Pill tone="neutral">Check</Pill> : null}
                           </div>
+                          {item?.kind === "comprehension" ? (
+                            <p className="report-item-question">{item.content}</p>
+                          ) : null}
                           <p className="report-item-expected" lang={assessment.subject === "kannada" ? "kn" : undefined}>
-                            {itemResult.expected}
+                            {item?.kind === "comprehension" ? `Expected answer: ${itemResult.expected}` : itemResult.expected}
                           </p>
                           <div className="report-item-evidence">
                             <span className="report-item-label">

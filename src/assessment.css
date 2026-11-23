@@ -1513,6 +1513,21 @@
   font-weight: 500;
 }
 
+.report-item-question {
+  margin-top: 6px;
+  font-family: var(--font-reading);
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.report-item-question + .report-item-expected {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .report-item-evidence {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);

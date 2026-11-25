@@ -11,6 +11,7 @@ import {
   updateSettings,
   useDB,
 } from "../lib/store";
+import { syncConfigured, syncPendingWritten, testSync } from "../lib/sync";
 import { useHashRoute } from "../lib/router";
 import { CENTRES, EDUCATORS } from "../lib/defaults";
 import {
@@ -18,7 +19,9 @@ import {
   exportJson,
   exportLearnerCsv,
   exportSpeechCsv,
+  exportWrittenCsv,
 } from "../lib/export";
+import { clearAllPhotos } from "../lib/photoStore";
 import { sourceLinks, team } from "../data/evidence";
 import { PageHeader } from "../components/PageHeader";
 import { Icon } from "../components/Icon";
@@ -30,6 +33,7 @@ const SETTINGS_TABS = [
   { id: "grading", label: "Grading" },
   { id: "levels", label: "Levels" },
   { id: "items", label: "Items" },
+  { id: "sync", label: "Sync" },
   { id: "data", label: "Data & privacy" },
   { id: "about", label: "About" },
 ] as const;
@@ -48,6 +52,8 @@ export function SettingsPage() {
   const [bankSubject, setBankSubject] = useState<SubjectId>("kannada");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const next = route.query.get("tab");
@@ -521,6 +527,125 @@ export function SettingsPage() {
         </div>
       ) : null}
 
+      {tab === "sync" ? (
+        <div className="settings-view">
+          <section className="panel data-panel" aria-labelledby="sync-title">
+            <div className="section-head">
+              <div>
+                <h2 id="sync-title">Supabase sync</h2>
+                <p className="section-sub">
+                  Written reports and page photos upload when a connection is available. Offline records
+                  wait in a local queue.
+                </p>
+              </div>
+              <Pill tone={syncConfigured(db.settings) ? "positive" : "neutral"}>
+                {syncConfigured(db.settings) ? "Configured" : "Local only"}
+              </Pill>
+            </div>
+
+            <div className="field-grid">
+              <div className="field">
+                <label htmlFor="settings-sync-url">Supabase project URL</label>
+                <input
+                  id="settings-sync-url"
+                  className="input"
+                  type="url"
+                  value={db.settings.syncUrl}
+                  onChange={(event) => patch({ syncUrl: event.target.value })}
+                  placeholder="https://your-project.supabase.co"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="settings-sync-key">Anon public key</label>
+                <input
+                  id="settings-sync-key"
+                  className="input"
+                  type="password"
+                  value={db.settings.syncKey}
+                  onChange={(event) => patch({ syncKey: event.target.value })}
+                  placeholder="eyJhbGciOi…"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="sync-status-row">
+              <div>
+                <span className="setting-control-label">This device</span>
+                <span className="small muted">{db.deviceId}</span>
+              </div>
+              <div>
+                <span className="setting-control-label">Written records</span>
+                <span className="small muted">
+                  {db.writtenAssessments.filter((item) => item.syncStatus === "synced").length} synced ·{" "}
+                  {db.writtenAssessments.filter((item) => item.syncStatus !== "synced").length} waiting
+                </span>
+              </div>
+              <div>
+                <span className="setting-control-label">Connection</span>
+                <span className="small muted">{navigator.onLine ? "Online" : "Offline"}</span>
+              </div>
+            </div>
+
+            <div className="data-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={!syncConfigured(db.settings)}
+                onClick={() => {
+                  void testSync(db.settings).then((result) => setSyncMessage(result.message));
+                }}
+              >
+                Test connection
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!syncConfigured(db.settings) || syncing || !navigator.onLine}
+                onClick={() => {
+                  setSyncing(true);
+                  void syncPendingWritten(db.settings)
+                    .then((result) => setSyncMessage(result.message))
+                    .finally(() => setSyncing(false));
+                }}
+              >
+                {syncing ? "Syncing…" : "Sync now"}
+              </button>
+            </div>
+            {syncMessage ? <p className="sync-message">{syncMessage}</p> : null}
+
+            <p className="setting-foot">
+              Run <code>supabase/schema.sql</code> in the Supabase SQL editor first. The anon key is public
+              to this browser; row-level security must be configured before real child data is uploaded.
+              This is a prototype, not a production data system.
+            </p>
+          </section>
+
+          <section className="panel data-panel" aria-labelledby="sync-privacy-title">
+            <div className="section-head">
+              <div>
+                <h2 id="sync-privacy-title">What sync uploads</h2>
+                <p className="section-sub">Only the written record and its page photos.</p>
+              </div>
+            </div>
+            <ul className="plain-list">
+              <li>Anonymous learner code, subject, centre, educator, rubric marks and notes.</li>
+              <li>Compressed photos of the written pages.</li>
+              <li>The device ID and timestamps needed to merge records.</li>
+              <li>No names, audio or speech recordings.</li>
+            </ul>
+            <div className="notice notice--warning privacy-notice">
+              <Icon name="alert" size={15} />
+              <span>
+                Supabase is a cloud service. Get consent and agree the data policy before enabling sync on
+                real children's records.
+              </span>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {tab === "data" ? (
         <div className="settings-view">
           <div className="storage-strip">
@@ -533,11 +658,11 @@ export function SettingsPage() {
               <span className="storage-value num">{db.assessments.length}</span>
             </div>
             <div>
-              <span className="storage-label">Speech trials</span>
-              <span className="storage-value num">{db.speechTrials.length}</span>
+              <span className="storage-label">Written checks</span>
+              <span className="storage-value num">{db.writtenAssessments.length}</span>
             </div>
             <div>
-              <span className="storage-label">Local data</span>
+              <span className="storage-label">Metadata size</span>
               <span className="storage-value num">{formatBytes(storageSize)}</span>
             </div>
           </div>
@@ -565,10 +690,14 @@ export function SettingsPage() {
               <button type="button" className="btn" onClick={() => exportSpeechCsv(db)} disabled={!db.speechTrials.length}>
                 <Icon name="download" size={14} /> Speech trials CSV
               </button>
+              <button type="button" className="btn" onClick={() => exportWrittenCsv(db)} disabled={!db.writtenAssessments.length}>
+                <Icon name="download" size={14} /> Written checks CSV
+              </button>
             </div>
             <p className="setting-foot">
-              Exports leave the app as plain files. Treat them as child records and store them on a
-              protected device.
+              Exports leave the app as plain files. Written page photos are stored separately in this
+              browser and are not included in the JSON or CSV export. Treat all exports as child records and
+              store them on a protected device.
             </p>
           </section>
 
@@ -585,18 +714,18 @@ export function SettingsPage() {
                 <h3>Stored</h3>
                 <ul className="plain-list">
                   <li>Anonymous learner code, enrolled standard, centre, home language, consent flag.</li>
-                  <li>Assessment results by subject, item marks, duration, educator and confidence.</li>
-                  <li>Educator notes and speech transcripts, when entered or logged.</li>
-                  <li>Grading settings and custom items.</li>
+                  <li>Verbal assessment results, item marks, duration, educator and confidence.</li>
+                  <li>Written rubric marks, notes and compressed page photos.</li>
+                  <li>Grading settings, custom items and the optional Supabase URL/key.</li>
                 </ul>
               </div>
               <div>
                 <h3>Not stored</h3>
                 <ul className="plain-list">
-                  <li>Names, photographs, dates of birth or addresses.</li>
-                  <li>Audio recordings.</li>
-                  <li>Passwords, accounts or a login identity.</li>
-                  <li>Anything sent to a server. There is no server in this prototype.</li>
+                  <li>Names, dates of birth or addresses.</li>
+                  <li>Audio recordings or speech files.</li>
+                  <li>Passwords or a login identity.</li>
+                  <li>Anything on a server unless Supabase sync is configured.</li>
                 </ul>
               </div>
             </div>
@@ -628,8 +757,8 @@ export function SettingsPage() {
               <div>
                 <p className="toggle-row-title">Restore the demo records</p>
                 <p className="toggle-row-desc">
-                  Replaces all learners, assessments, trials and settings with the seeded demonstration
-                  data.
+                  Replaces all learners, assessments, written checks, trials and settings with the seeded
+                  demonstration data.
                 </p>
               </div>
               <button type="button" className="btn" onClick={() => setConfirmReset(true)}>
@@ -640,8 +769,8 @@ export function SettingsPage() {
               <div>
                 <p className="toggle-row-title">Clear all local records</p>
                 <p className="toggle-row-desc">
-                  Removes learners, assessments, trials and the draft, and resets the settings. The app stays
-                  installed.
+                  Removes learners, assessments, written checks, trials and the draft, and resets the
+                  settings. The app stays installed.
                 </p>
               </div>
               <button type="button" className="btn btn-danger" onClick={() => setConfirmClear(true)}>
@@ -666,7 +795,7 @@ export function SettingsPage() {
                 enrolled standard.
               </p>
               <p className="about-version">
-                Version 0.1.0 · prototype · Team Syndicate, 2026
+                Version 0.3.0 · prototype · Team Syndicate, 2026
               </p>
             </div>
           </section>
@@ -676,8 +805,8 @@ export function SettingsPage() {
               <h3>What this prototype is</h3>
               <ul className="plain-list">
                 <li>A worked example of how the Task 1–4 research could become a product.</li>
-                <li>A local browser app with seeded demo records and no server.</li>
-                <li>A draft six-rung ladder per subject, editable in Settings.</li>
+                <li>A local browser app with seeded demo records and optional Supabase sync.</li>
+                <li>A draft six-rung ladder per subject, plus a paper-first written sample.</li>
                 <li>An experiment in advisory Kannada and English speech, never an automatic grade.</li>
               </ul>
             </section>
@@ -685,7 +814,7 @@ export function SettingsPage() {
               <h3>What it is not</h3>
               <ul className="plain-list">
                 <li>A validated SparkL assessment or an official rubric.</li>
-                <li>A production child-data system, a login or a sync service.</li>
+                <li>A production child-data system, a login or a managed sync service.</li>
                 <li>A replacement for an educator's listening and judgement.</li>
                 <li>Evidence that speech recognition works on the real shared device.</li>
               </ul>
@@ -734,8 +863,8 @@ export function SettingsPage() {
           <section className="about-section">
             <h3>Privacy in one line</h3>
             <p className="about-copy">
-              No names, no audio, no server. Records live in this browser and can be exported or cleared at
-              any time from Data &amp; privacy.
+              No names and no audio. Verbal records and written page photos stay in this browser unless
+              Supabase sync is configured; the demo can be exported or cleared at any time.
             </p>
           </section>
         </div>
@@ -756,6 +885,7 @@ export function SettingsPage() {
               className="btn btn-primary"
               onClick={() => {
                 resetDemo();
+                void clearAllPhotos();
                 setConfirmReset(false);
                 toast("Demo records restored", "positive");
               }}
@@ -765,14 +895,14 @@ export function SettingsPage() {
           </>
         }
       >
-        <p className="small muted">Any assessments added on this device will be lost.</p>
+        <p className="small muted">Any assessments or written checks added on this device will be lost.</p>
       </Modal>
 
       <Modal
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
         title="Clear every local record?"
-        description="This removes all learners, assessments, speech trials and the draft, and resets the grading settings."
+        description="This removes all learners, assessments, written checks, speech trials and the draft, and resets the grading settings."
         footer={
           <>
             <button type="button" className="btn" onClick={() => setConfirmClear(false)}>
@@ -783,6 +913,7 @@ export function SettingsPage() {
               className="btn btn-danger"
               onClick={() => {
                 clearAll();
+                void clearAllPhotos();
                 setConfirmClear(false);
                 toast("All local records cleared");
               }}
@@ -792,7 +923,7 @@ export function SettingsPage() {
           </>
         }
       >
-        <p className="small muted">Export a JSON backup first if any of these records matter.</p>
+        <p className="small muted">Export a JSON backup first if any of these records matter. Photos are not in the JSON backup.</p>
       </Modal>
     </>
   );

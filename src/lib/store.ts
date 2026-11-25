@@ -10,11 +10,18 @@ import type {
   Settings,
   SpeechTrial,
   SubjectId,
+  WrittenAssessment,
+  WrittenDraft,
 } from "../types";
 import { defaultSettings } from "./defaults";
 
 const KEY = "sparkl-lens-db-v1";
-const VERSION = 2;
+const VERSION = 3;
+
+function makeDeviceId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 const listeners = new Set<() => void>();
 
@@ -24,7 +31,26 @@ function load(): Database {
     if (raw) {
       const parsed = JSON.parse(raw) as Database;
       if (parsed && parsed.version === VERSION && Array.isArray(parsed.learners)) {
+        if (!parsed.deviceId) parsed.deviceId = makeDeviceId();
+        if (!Array.isArray(parsed.writtenAssessments)) parsed.writtenAssessments = [];
+        if (parsed.writtenDraft === undefined) parsed.writtenDraft = null;
         return parsed;
+      }
+      if (parsed && parsed.version === 2 && Array.isArray(parsed.learners)) {
+        const migrated: Database = {
+          ...parsed,
+          version: VERSION,
+          deviceId: makeDeviceId(),
+          writtenAssessments: [],
+          writtenDraft: null,
+          settings: {
+            ...parsed.settings,
+            syncUrl: parsed.settings.syncUrl ?? "",
+            syncKey: parsed.settings.syncKey ?? "",
+          },
+        };
+        persist(migrated);
+        return migrated;
       }
     }
   } catch {
@@ -173,6 +199,50 @@ export function clearDraft(): void {
   });
 }
 
+export function saveWrittenDraft(draft: WrittenDraft): void {
+  update((database) => {
+    database.writtenDraft = draft;
+  });
+}
+
+export function clearWrittenDraft(): void {
+  update((database) => {
+    database.writtenDraft = null;
+  });
+}
+
+export function addWrittenAssessment(assessment: WrittenAssessment): void {
+  update((database) => {
+    if (!database.writtenAssessments.some((item) => item.id === assessment.id)) {
+      database.writtenAssessments.push(assessment);
+    }
+    database.writtenDraft = null;
+  });
+}
+
+export function updateWrittenAssessment(
+  assessmentId: string,
+  patch: Partial<WrittenAssessment>,
+): void {
+  update((database) => {
+    const assessment = database.writtenAssessments.find((item) => item.id === assessmentId);
+    if (assessment) Object.assign(assessment, patch);
+  });
+}
+
+export function mergeWrittenAssessments(records: WrittenAssessment[]): void {
+  update((database) => {
+    for (const record of records) {
+      const existing = database.writtenAssessments.find((item) => item.id === record.id);
+      if (!existing) {
+        database.writtenAssessments.push(record);
+      } else if (new Date(record.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
+        Object.assign(existing, record);
+      }
+    }
+  });
+}
+
 export function addSpeechTrial(trial: SpeechTrial): void {
   update((database) => {
     database.speechTrials.unshift(trial);
@@ -186,14 +256,18 @@ export function resetDemo(): void {
 }
 
 export function clearAll(): void {
+  const deviceId = state.deviceId || makeDeviceId();
   state = {
     version: VERSION,
     createdAt: new Date().toISOString(),
+    deviceId,
     learners: [],
     assessments: [],
+    writtenAssessments: [],
     speechTrials: [],
     settings: defaultSettings(),
     draft: null,
+    writtenDraft: null,
   };
   persist(state);
   emit();

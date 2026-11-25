@@ -6,6 +6,8 @@ export type Support = "independent" | "prompted" | "with-help";
 export type Confidence = "high" | "medium" | "low";
 export type Pacing = "auto" | "educator";
 export type ReviewStatus = "unreviewed" | "confirmed" | "adjusted";
+export type WrittenBand = "emerging" | "developing" | "secure";
+export type WrittenSyncStatus = "queued" | "synced" | "error";
 
 export type ItemKind = "read" | "say" | "answer" | "dots" | "comprehension";
 export type CaptureMethod = "speech" | "manual" | "keypad" | "text";
@@ -159,6 +161,79 @@ export interface SpeechTrial {
   source: "speech" | "manual";
 }
 
+export interface WrittenCriterion {
+  id: string;
+  label: string;
+  max: number;
+}
+
+export interface WrittenTaskDefinition {
+  id: string;
+  title: string;
+  prompt: string;
+  content: string;
+  kannadaPrompt?: string;
+  criteria: WrittenCriterion[];
+}
+
+export interface WrittenTaskSet {
+  id: string;
+  subject: SubjectId;
+  name: string;
+  description: string;
+  tasks: WrittenTaskDefinition[];
+}
+
+export interface WrittenTaskResult {
+  taskId: string;
+  title: string;
+  prompt: string;
+  content: string;
+  criteria: WrittenCriterion[];
+  photoId: string | null;
+  scores: Record<string, number>;
+  note: string;
+}
+
+export interface WrittenAssessment {
+  id: string;
+  learnerId: string;
+  subject: SubjectId;
+  taskSetId: string;
+  taskSetName: string;
+  startedAt: string;
+  completedAt: string;
+  durationSec: number;
+  educator: string;
+  centre: string;
+  tasks: WrittenTaskResult[];
+  totalScore: number;
+  maxScore: number;
+  band: WrittenBand;
+  notes: string;
+  syncStatus: WrittenSyncStatus;
+  syncError?: string;
+  syncedAt?: string;
+  updatedAt: string;
+  deviceId: string;
+}
+
+export interface WrittenDraft {
+  id: string;
+  learnerId: string;
+  subject: SubjectId;
+  taskSetId: string;
+  taskSetName: string;
+  startedAt: string;
+  lastSavedAt: string;
+  educator: string;
+  centre: string;
+  currentIndex: number;
+  tasks: WrittenTaskResult[];
+  notes: string;
+  deviceId: string;
+}
+
 export interface DraftRung {
   order: number;
   itemIds: string[];
@@ -195,14 +270,19 @@ export interface Settings {
   benchmarks: Record<SubjectId, Record<string, number>>;
   disabledRungs: Record<SubjectId, string[]>;
   customItems: Record<string, Item[]>;
+  syncUrl: string;
+  syncKey: string;
 }
 
 export interface Database {
   version: number;
   createdAt: string;
+  deviceId: string;
   learners: Learner[];
   assessments: Assessment[];
+  writtenAssessments: WrittenAssessment[];
   speechTrials: SpeechTrial[];
   settings: Settings;
   draft: DraftSession | null;
+  writtenDraft: WrittenDraft | null;
 }

@@ -4,6 +4,7 @@ import { useDB } from "../lib/store";
 import { navigate, useHashRoute } from "../lib/router";
 import { Icon, type IconName } from "./Icon";
 import { Pill } from "./Pill";
+import { SyncManager } from "./SyncManager";
 
 interface NavItem {
   label: string;
@@ -15,6 +16,7 @@ interface NavItem {
 const NAV_MAIN: NavItem[] = [
   { label: "Overview", path: "/overview", icon: "overview", match: ["/overview"] },
   { label: "Assess", path: "/assess", icon: "ladder", match: ["/assess", "/session"] },
+  { label: "Written", path: "/written", icon: "edit", match: ["/written"] },
   { label: "Reports", path: "/reports", icon: "report", match: ["/reports"] },
   { label: "Learners", path: "/learners", icon: "learners", match: ["/learners"] },
 ];
@@ -30,6 +32,7 @@ const PAGE_TITLES: Record<string, string> = {
   overview: "Overview",
   assess: "Assess",
   session: "Assessment in progress",
+  written: "Written ability",
   learners: "Learners",
   reports: "Reports",
   learner: "Learner profile",
@@ -119,6 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className={`app-frame ${autoFocus ? "is-auto-focus" : ""}`}>
+      <SyncManager />
       <aside className="sidebar">
         <a href="#/overview" className="brand" aria-label="SparkL Lens, overview">
           <span className="brand-mark" aria-hidden="true">

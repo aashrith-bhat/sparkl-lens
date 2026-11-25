@@ -21,6 +21,8 @@ export function defaultSettings(): Settings {
     benchmarks,
     disabledRungs,
     customItems: {},
+    syncUrl: "",
+    syncKey: "",
   };
 }
 

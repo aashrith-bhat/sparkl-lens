@@ -18,6 +18,7 @@ export type IconName =
   | "plus"
   | "minus"
   | "mic"
+  | "camera"
   | "stop"
   | "play"
   | "download"
@@ -128,6 +129,12 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M5 11a7 7 0 0 0 14 0" />
       <path d="M12 18v3" />
       <path d="M8.5 21h7" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M4 7h3l1.5-2h7L17 7h3v12H4V7Z" />
+      <circle cx="12" cy="13" r="3.5" />
     </>
   ),
   stop: <rect x="6" y="6" width="12" height="12" rx="1.8" />,

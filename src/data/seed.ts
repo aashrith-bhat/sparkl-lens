@@ -566,13 +566,19 @@ export function makeSeedDatabase(now = new Date()): Database {
   });
 
   return {
-    version: 2,
+    version: 3,
     createdAt: now.toISOString(),
+    deviceId:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `seed-${now.getTime().toString(36)}`,
     learners,
     assessments,
+    writtenAssessments: [],
     speechTrials,
     settings,
     draft: null,
+    writtenDraft: null,
   };
 }
 

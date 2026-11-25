@@ -7,6 +7,10 @@ import { AssessPage } from "./pages/Assess";
 import { SessionPage } from "./pages/Session";
 import { ReportsPage } from "./pages/Reports";
 import { ReportDetailPage } from "./pages/ReportDetail";
+import { WrittenPage } from "./pages/Written";
+import { WrittenSetupPage } from "./pages/WrittenSetup";
+import { WrittenSessionPage } from "./pages/WrittenSession";
+import { WrittenReportPage } from "./pages/WrittenReport";
 import { LearnersPage } from "./pages/Learners";
 import { LearnerDetailPage } from "./pages/LearnerDetail";
 import { SpeechLabPage } from "./pages/SpeechLab";
@@ -34,6 +38,18 @@ export default function App() {
       ) : (
         <ReportsPage />
       );
+      break;
+    case "written":
+      page =
+        route.segments[1] === "new" ? (
+          <WrittenSetupPage />
+        ) : route.segments[1] === "session" ? (
+          <WrittenSessionPage />
+        ) : route.segments[1] ? (
+          <WrittenReportPage key={route.segments[1]} />
+        ) : (
+          <WrittenPage />
+        );
       break;
     case "learners":
       page = route.segments[1] ? (

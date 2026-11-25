@@ -87,6 +87,31 @@ export function exportSpeechCsv(db: Database): void {
   downloadFile(`sparkl-speech-trials-${safeDate()}.csv`, buildCsv(rows), "text/csv;charset=utf-8");
 }
 
+export function exportWrittenCsv(db: Database): void {
+  const learnerMap = new Map(db.learners.map((learner) => [learner.id, learner]));
+  const rows = [...db.writtenAssessments]
+    .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+    .map((assessment) => {
+      const learner = learnerMap.get(assessment.learnerId);
+      return {
+        learner_code: learner?.code ?? "—",
+        enrolled_std: learner?.enrolledStd ?? "",
+        centre: assessment.centre,
+        subject: SUBJECT_LABEL[assessment.subject],
+        assessed_on: formatDate(assessment.completedAt),
+        band: assessment.band,
+        rubric_score: assessment.totalScore,
+        rubric_max: assessment.maxScore,
+        tasks: assessment.tasks.length,
+        photos: assessment.tasks.filter((task) => task.photoId).length,
+        sync_status: assessment.syncStatus,
+        educator: assessment.educator,
+        notes: assessment.notes,
+      };
+    });
+  downloadFile(`sparkl-written-${safeDate()}.csv`, buildCsv(rows), "text/csv;charset=utf-8");
+}
+
 export function exportJson(db: Database): void {
   const payload = {
     product: "SparkL Lens",

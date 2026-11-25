@@ -10,6 +10,7 @@ import {
   subjectSnapshots,
 } from "../lib/selectors";
 import { formatDate, formatDuration, relativeDate, stepTitle } from "../lib/format";
+import { WRITTEN_BAND_LABEL } from "../data/written";
 import { PageHeader } from "../components/PageHeader";
 import { Pill } from "../components/Pill";
 import { Icon } from "../components/Icon";
@@ -72,6 +73,11 @@ export function LearnerDetailPage() {
   const latestRung = latest && latest.finalOrder > 0 ? getRung(selected, latest.finalOrder) : null;
   const allAssessments = assessmentsForLearner(db.assessments, learner.id);
   const firstRung = getRung(selected, 1);
+  const latestWritten =
+    db.writtenAssessments
+      .filter((item) => item.learnerId === learner.id && item.subject === selected)
+      .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0] ??
+    null;
   const nextStep =
     latestRung?.nextStep ??
     firstRung?.nextStep ??
@@ -114,6 +120,9 @@ export function LearnerDetailPage() {
             <button type="button" className="btn" onClick={copyCode}>
               <Icon name="copy" size={14} /> Copy code
             </button>
+            <a className="btn" href={`#/written/new?learner=${learner.id}&subject=${selected}`}>
+              Written check
+            </a>
             {learner.consentOnFile ? (
               <a
                 className="btn btn-primary"
@@ -325,6 +334,56 @@ export function LearnerDetailPage() {
                 Open the full report <Icon name="arrow-right" size={13} />
               </a>
             ) : null}
+          </section>
+
+          <section className="panel learner-last" aria-labelledby="written-title">
+            <div className="section-head">
+              <div>
+                <h2 id="written-title">Written evidence</h2>
+                <p className="section-sub">
+                  {latestWritten
+                    ? formatDate(latestWritten.completedAt)
+                    : "No written check in this subject."}
+                </p>
+              </div>
+              {latestWritten ? (
+                <span className={`written-band written-band--${latestWritten.band}`}>
+                  {WRITTEN_BAND_LABEL[latestWritten.band]}
+                </span>
+              ) : null}
+            </div>
+            {latestWritten ? (
+              <>
+                <dl className="kv-list">
+                  <div>
+                    <dt>Rubric score</dt>
+                    <dd className="num">
+                      {latestWritten.totalScore} / {latestWritten.maxScore}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Tasks</dt>
+                    <dd className="num">{latestWritten.tasks.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Photos</dt>
+                    <dd className="num">
+                      {latestWritten.tasks.filter((task) => task.photoId).length}
+                    </dd>
+                  </div>
+                </dl>
+                <a className="text-link mt-8" href={`#/written/${latestWritten.id}`}>
+                  Open written report <Icon name="arrow-right" size={13} />
+                </a>
+              </>
+            ) : (
+              <a
+                className="text-link"
+                href={`#/written/new?learner=${learner.id}&subject=${selected}`}
+              >
+                Start a written check <Icon name="arrow-right" size={13} />
+              </a>
+            )}
           </section>
         </div>
       </div>
